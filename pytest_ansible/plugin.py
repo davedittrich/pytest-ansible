@@ -28,79 +28,86 @@ def become_methods():
 
 
 def pytest_addoption(parser):
-    """Add options to control ansible."""
+    """
+    Add options to control ansible.
+
+    As other plugins may similarly use Ansible (e.g., `pytest-testinfra`),
+    arguments are pre-pended with `pytest-ansible` to avoid `arparse` option
+    namespace conflicts that result in runtime failures that are
+    extremely confusing, difficult to debug and to deconflict.
+    """
 
     group = parser.getgroup('pytest-ansible')
-    group.addoption('--inventory', '--ansible-inventory',
+    group.addoption('--pytest-ansible-inventory',
                     action='store',
                     dest='ansible_inventory',
                     default=ansible.constants.DEFAULT_HOST_LIST,
                     metavar='ANSIBLE_INVENTORY',
                     help='ansible inventory file URI (default: %(default)s)')
-    group.addoption('--extra-inventory', '--ansible-extra-inventory',
+    group.addoption('--pytest-ansible-extra-inventory',
                     action='store',
                     dest='ansible_extra_inventory',
                     default=None,
                     metavar='ANSIBLE_EXTRA_INVENTORY',
                     help='ansible extra inventory file URI (default: %(default)s)')
-    group.addoption('--host-pattern', '--ansible-host-pattern',
+    group.addoption('--pytest-ansible-host-pattern',
                     action='store',
                     dest='ansible_host_pattern',
                     default=None,
                     metavar='ANSIBLE_HOST_PATTERN',
                     help='ansible host pattern (default: %(default)s)')
-    group.addoption('--limit', '--ansible-limit',
+    group.addoption('--pytest-ansible-limit',
                     action='store',
                     dest='ansible_subset',
                     default=ansible.constants.DEFAULT_SUBSET,
                     metavar='ANSIBLE_SUBSET',
                     help='further limit selected hosts to an additional pattern')
-    group.addoption('--connection', '--ansible-connection',
+    group.addoption('--pytest-ansible-connection',
                     action='store',
                     dest='ansible_connection',
                     default=ansible.constants.DEFAULT_TRANSPORT,
                     help="connection type to use (default: %(default)s)")
-    group.addoption('--user', '--ansible-user',
+    group.addoption('--pytest-ansible-user',
                     action='store',
                     dest='ansible_user',
                     default=ansible.constants.DEFAULT_REMOTE_USER,
                     help='connect as this user (default: %(default)s)')
-    group.addoption('--check', '--ansible-check',
+    group.addoption('--pytest-ansible-check',
                     action='store_true',
                     dest='ansible_check',
                     default=False,
                     help='don\'t make any changes; instead, try to predict some of the changes that may occur')
-    group.addoption('--module-path', '--ansible-module-path',
+    group.addoption('--pytest-ansible-module-path',
                     action='store',
                     dest='ansible_module_path',
                     default=ansible.constants.DEFAULT_MODULE_PATH,
                     help='specify path(s) to module library (default: %(default)s)')
 
     # become privilege escalation
-    group.addoption('--become', '--ansible-become',
+    group.addoption('--pytest-ansible-become',
                     action='store_true',
                     dest='ansible_become',
                     default=ansible.constants.DEFAULT_BECOME,
                     help='run operations with become, nopasswd implied (default: %(default)s)')
-    group.addoption('--become-method', '--ansible-become-method',
+    group.addoption('--pytest-ansible-become-method',
                     action='store',
                     dest='ansible_become_method',
                     default=ansible.constants.DEFAULT_BECOME_METHOD,
                     help="privilege escalation method to use (default: %%(default)s), valid choices: [ %s ]" %
                     (' | '.join(become_methods())))
-    group.addoption('--become-user', '--ansible-become-user',
+    group.addoption('--pytest-ansible-become-user',
                     action='store',
                     dest='ansible_become_user',
                     default=ansible.constants.DEFAULT_BECOME_USER,
                     help='run operations as this user (default: %(default)s)')
-    group.addoption('--ask-become-pass', '--ansible-ask-become-pass',
+    group.addoption('--pytest-ansible-ask-become-pass',
                     action='store',
                     dest='ansible_ask_become_pass',
                     default=ansible.constants.DEFAULT_BECOME_ASK_PASS,
                     help='ask for privilege escalation password (default: %(default)s)')
 
     # Add github marker to --help
-    parser.addini("ansible", "Ansible integration", "args")
+    parser.addini("pytest-ansible", "Ansible integration", "args")
 
 
 def pytest_configure(config):
@@ -128,7 +135,7 @@ def pytest_generate_tests(metafunc):
         PyTestAnsiblePlugin.assert_required_ansible_parameters(metafunc.config)
         try:
             plugin = metafunc.config.pluginmanager.getplugin("ansible")
-            hosts = plugin.initialize(config=plugin.config, pattern=metafunc.config.getoption('ansible_host_pattern'))
+            hosts = plugin.initialize(config=plugin.config, pattern=metafunc.config.getoption('pytest_ansible_host_pattern'))
         except ansible.errors.AnsibleError as e:
             raise pytest.UsageError(e)
         # Return the host name as a string
@@ -144,7 +151,7 @@ def pytest_generate_tests(metafunc):
         PyTestAnsiblePlugin.assert_required_ansible_parameters(metafunc.config)
         try:
             plugin = metafunc.config.pluginmanager.getplugin("ansible")
-            hosts = plugin.initialize(config=plugin.config, pattern=metafunc.config.getoption('ansible_host_pattern'))
+            hosts = plugin.initialize(config=plugin.config, pattern=metafunc.config.getoption('pytest_ansible_host_pattern'))
         except ansible.errors.AnsibleError as e:
             raise pytest.UsageError(e)
         # FIXME: Eeew, this shouldn't be interfacing with `hosts.options`
@@ -189,9 +196,19 @@ class PyTestAnsiblePlugin:
 
     def _load_ansible_config(self, config):
         """Load ansible configuration from command-line."""
-        option_names = ['ansible_inventory', 'ansible_extra_inventory', 'ansible_host_pattern', 'ansible_connection', 'ansible_user',
-                        'ansible_module_path', 'ansible_become', 'ansible_become_method', 'ansible_become_user',
-                        'ansible_ask_become_pass', 'ansible_subset']
+        option_names = [
+            'pytest_ansible_inventory',
+            'pytest_ansible_extra_inventory',
+            'pytest_ansible_host_pattern',
+            'pytest_ansible_connection',
+            'pytest_ansible_user',
+            'pytest_ansible_module_path',
+            'pytest_ansible_become',
+            'pytest_ansible_become_method',
+            'pytest_ansible_become_user',
+            'pytest_ansible_ask_become_pass',
+            'pytest_ansible_subset',
+        ]
 
         kwargs = dict()
 
@@ -201,9 +218,10 @@ class PyTestAnsiblePlugin:
             kwargs[short_key] = config.getoption(key)
 
         # normalize ansible.ansible_become options
-        kwargs['become'] = kwargs.get('become') or ansible.constants.DEFAULT_BECOME
-        kwargs['become_user'] = kwargs.get('become_user') or ansible.constants.DEFAULT_BECOME_USER
-        kwargs['ask_become_pass'] = kwargs.get('ask_become_pass') or ansible.constants.DEFAULT_BECOME_ASK_PASS
+        kwargs['become'] = kwargs.get('pytest_ansible_become') or ansible.constants.DEFAULT_BECOME
+        kwargs['become_user'] = kwargs.get('pytest_ansible_become_user') or ansible.constants.DEFAULT_BECOME_USER
+        kwargs['ask_become_pass'] = kwargs.get('pytest_ansible_ask_become_pass') or ansible.constants.DEFAULT_BECOME_ASK_PASS
+        kwargs['ask_become_method'] = kwargs.get('pytest_ansible_become_method') or ansible.constants.DEFAULT_BECOME_METHOD
 
         return kwargs
 
@@ -237,14 +255,14 @@ class PyTestAnsiblePlugin:
         errors = []
 
         # Verify --ansible-host-pattern was provided
-        ansible_hostname = config.getoption('ansible_host_pattern')
+        ansible_hostname = config.getoption('pytest_ansible_host_pattern')
         if ansible_hostname is None or ansible_hostname == '':
             errors.append("Missing required parameter --ansible-host-pattern/--host-pattern")
 
         # NOTE: I don't think this will ever catch issues since ansible_inventory
         # defaults to '/etc/ansible/hosts'
         # Verify --ansible-inventory was provided
-        ansible_inventory = config.getoption('ansible_inventory')
+        ansible_inventory = config.getoption('pytest_ansible_inventory')
         if ansible_inventory is None or ansible_inventory == "":
             errors.append("Unable to find an inventory file, specify one with the --ansible-inventory/--inventory "
                           "parameter.")
