@@ -1,76 +1,185 @@
+"""Test the host manager."""
+
+from __future__ import annotations
+
 import pytest
-from ansible.errors import AnsibleError
-from conftest import (ALL_HOSTS, POSITIVE_HOST_PATTERNS, NEGATIVE_HOST_PATTERNS, POSITIVE_HOST_SLICES,
-                      NEGATIVE_HOST_SLICES)
+
+from .conftest import (
+    ALL_EXTRA_HOSTS,
+    ALL_HOSTS,
+    EXTRA_HOST_POSITIVE_PATTERNS,
+    NEGATIVE_HOST_PATTERNS,
+    NEGATIVE_HOST_SLICES,
+    POSITIVE_HOST_PATTERNS,
+    POSITIVE_HOST_SLICES,
+)
+
 
 pytestmark = [
     pytest.mark.unit,
 ]
 
 
-def test_len(hosts):
-    assert len(hosts) == len(ALL_HOSTS)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_len(hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    assert len(_hosts) == len(ALL_HOSTS) + len(
+        ALL_EXTRA_HOSTS if include_extra_inventory else [],
+    )
 
 
-def test_keys(hosts):
-    sorted_keys = hosts.keys()
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_keys(hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    sorted_keys = _hosts.keys()
     sorted_keys.sort()
-    assert sorted_keys == ALL_HOSTS
+    for key in sorted_keys:
+        assert key in ALL_HOSTS + (ALL_EXTRA_HOSTS if include_extra_inventory else [])
 
 
-@pytest.mark.parametrize("host_pattern, num_hosts", POSITIVE_HOST_PATTERNS)
-def test_contains(host_pattern, num_hosts, hosts):
-    assert host_pattern in hosts, "{0} not in hosts".format(host_pattern)
+@pytest.mark.parametrize(
+    ("host_pattern", "num_hosts"),
+    POSITIVE_HOST_PATTERNS + EXTRA_HOST_POSITIVE_PATTERNS,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_contains(host_pattern, num_hosts, hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, ARG001, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    if not include_extra_inventory and host_pattern.startswith("extra"):
+        assert host_pattern not in _hosts, f"{host_pattern} in hosts"
+    else:
+        assert host_pattern in _hosts, f"{host_pattern} not in hosts"
 
 
-@pytest.mark.parametrize("host_pattern, num_hosts", NEGATIVE_HOST_PATTERNS)
-def test_not_contains(host_pattern, num_hosts, hosts):
-    assert host_pattern not in hosts
+@pytest.mark.parametrize(
+    ("host_pattern", "num_hosts"),
+    NEGATIVE_HOST_PATTERNS,
+)
+@pytest.mark.parametrize("include_extra_inventory", (True, False))
+def test_host_manager_not_contains(  # type: ignore[no-untyped-def]  # noqa: ANN201, D103
+    host_pattern,  # noqa: ANN001
+    num_hosts,  # noqa: ANN001, ARG001
+    hosts,  # noqa: ANN001
+    include_extra_inventory,  # noqa: ANN001
+):
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    assert host_pattern not in _hosts
 
 
-@pytest.mark.parametrize("host_pattern, num_hosts", POSITIVE_HOST_PATTERNS)
-def test_getitem(host_pattern, num_hosts, hosts):
-    assert hosts[host_pattern]
+@pytest.mark.parametrize(
+    ("host_pattern", "num_hosts"),
+    POSITIVE_HOST_PATTERNS + EXTRA_HOST_POSITIVE_PATTERNS,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_getitem(host_pattern, num_hosts, hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, ARG001, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    if not include_extra_inventory and host_pattern.startswith("extra"):
+        assert host_pattern not in _hosts
+    else:
+        assert _hosts[host_pattern]
 
 
-@pytest.mark.parametrize("host_pattern, num_hosts", NEGATIVE_HOST_PATTERNS)
-def test_not_getitem(host_pattern, num_hosts, hosts):
+@pytest.mark.parametrize(
+    ("host_pattern", "num_hosts"),
+    NEGATIVE_HOST_PATTERNS,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_not_getitem(  # type: ignore[no-untyped-def]  # noqa: ANN201, D103
+    host_pattern,  # noqa: ANN001
+    num_hosts,  # noqa: ANN001, ARG001
+    hosts,  # noqa: ANN001
+    include_extra_inventory,  # noqa: ANN001
+):
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
     with pytest.raises(KeyError):
-        assert hosts[host_pattern]
+        assert _hosts[host_pattern]
 
 
-@pytest.mark.parametrize("host_pattern, num_hosts", POSITIVE_HOST_PATTERNS)
-def test_getattr(host_pattern, num_hosts, hosts):
-    assert hasattr(hosts, host_pattern)
+@pytest.mark.parametrize(
+    ("host_pattern", "num_hosts"),
+    POSITIVE_HOST_PATTERNS + EXTRA_HOST_POSITIVE_PATTERNS,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_getattr(host_pattern, num_hosts, hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, ARG001, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    if not include_extra_inventory and host_pattern.startswith("extra"):
+        assert not hasattr(_hosts, host_pattern)
+    else:
+        assert hasattr(_hosts, host_pattern)
 
 
-@pytest.mark.parametrize("host_slice, num_hosts", POSITIVE_HOST_SLICES)
-def test_slice(host_slice, num_hosts, hosts):
-    assert len(hosts[host_slice]) == num_hosts, "%s != %s for %s" % (len(hosts[host_slice]), num_hosts, host_slice)
+@pytest.mark.parametrize(
+    ("host_slice", "num_hosts"),
+    POSITIVE_HOST_SLICES,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_slice(host_slice, num_hosts, hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    assert (
+        len(_hosts[host_slice]) == num_hosts[include_extra_inventory]
+    ), f"{len(_hosts[host_slice])} != {num_hosts} for {host_slice}"
 
 
-@pytest.mark.parametrize("host_slice", NEGATIVE_HOST_SLICES)
-def test_not_slice(host_slice, hosts):
+# pylint: disable=pointless-statement
+@pytest.mark.parametrize(
+    "host_slice",
+    NEGATIVE_HOST_SLICES,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_not_slice(host_slice, hosts, include_extra_inventory):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
     with pytest.raises(KeyError):
-        hosts[host_slice]
+        _hosts[host_slice]
 
 
-@pytest.mark.parametrize("host_pattern, num_hosts", NEGATIVE_HOST_PATTERNS)
-def test_not_getattr(host_pattern, num_hosts, hosts):
-    assert not hasattr(hosts, host_pattern)
+@pytest.mark.parametrize(
+    ("host_pattern", "num_hosts"),
+    NEGATIVE_HOST_PATTERNS,
+)
+@pytest.mark.parametrize(
+    "include_extra_inventory",
+    (True, False),
+)
+def test_host_manager_not_getattr(  # type: ignore[no-untyped-def]  # noqa: ANN201, D103
+    host_pattern,  # noqa: ANN001
+    num_hosts,  # noqa: ANN001, ARG001
+    hosts,  # noqa: ANN001
+    include_extra_inventory,  # noqa: ANN001
+):
+    _hosts = hosts(include_extra_inventory=include_extra_inventory)
+    assert not hasattr(_hosts, host_pattern)
     with pytest.raises(AttributeError):
-        getattr(hosts, host_pattern)
+        getattr(_hosts, host_pattern)
 
 
-# This should probably be made more generic for all options (and moved elsewhere)
-@pytest.mark.ansible_v1_xfail(raises=AnsibleError)
-def test_defaults(request):
-    from ansible.constants import DEFAULT_TRANSPORT
+def test_defaults(request):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    from ansible.constants import DEFAULT_TRANSPORT  # pylint: disable=no-name-in-module
 
     plugin = request.config.pluginmanager.getplugin("ansible")
     hosts = plugin.initialize(config=request.config, request=request)
 
-    # from pytest_ansible.host_manager import get_host_manager
-    # hosts = get_host_manager(inventory='unknown.example.com,')
-    assert 'connection' in hosts.options
-    assert hosts.options['connection'] == DEFAULT_TRANSPORT
+    assert "connection" in hosts.options
+    assert hosts.options["connection"] == DEFAULT_TRANSPORT

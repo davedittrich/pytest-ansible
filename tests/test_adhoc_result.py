@@ -1,106 +1,128 @@
-import pytest
+"""Adhoc result tests."""
+
+from __future__ import annotations
+
 from types import GeneratorType
+
+import pytest
+
 from pytest_ansible.results import ModuleResult
-from conftest import ALL_HOSTS
 
-invalid_hosts = ['none', 'all', '*', 'local*']
-
-
-@pytest.fixture()
-def adhoc_result(hosts):
-    return hosts.all.ping()
+from .conftest import ALL_EXTRA_HOSTS, ALL_HOSTS
 
 
-def test_len(adhoc_result):
-    assert len(adhoc_result) == len(ALL_HOSTS)
+invalid_hosts = [
+    pytest.param("none"),
+    pytest.param("all"),
+    pytest.param("*", id="glob"),
+    pytest.param("local*", id="glob2"),
+]
 
 
-def test_keys(adhoc_result):
-    assert set(adhoc_result) == set(ALL_HOSTS)
+@pytest.fixture(params=[True, False], name="adhoc_result")
+def fixture_adhoc_result(request, hosts):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    def create_hosts():  # type: ignore[no-untyped-def]  # noqa: ANN202
+        _hosts = hosts(include_extra_inventory=request.param)
+        return _hosts.all.ping(), request.param
+
+    return create_hosts
 
 
-def test_items(adhoc_result):
-    items = adhoc_result.items()
+def test_len(adhoc_result):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    assert len(adhoc_result_ret) == len(ALL_HOSTS) + len(
+        ALL_EXTRA_HOSTS if include_extra_inv else [],
+    )
+
+
+def test_keys(adhoc_result):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    assert set(adhoc_result_ret) == set(
+        ALL_HOSTS + (ALL_EXTRA_HOSTS if include_extra_inv else []),
+    )
+
+
+def test_items(adhoc_result):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    items = adhoc_result_ret.items()
     assert isinstance(items, GeneratorType)
-    for count, item in enumerate(items, 1):
+    count = 0
+    for count, item in enumerate(items, 1):  # noqa: B007
         assert isinstance(item, tuple)
         assert isinstance(item[0], str)
         assert isinstance(item[1], ModuleResult)
-    assert count == len(ALL_HOSTS)
+    assert count == len(ALL_HOSTS + (ALL_EXTRA_HOSTS if include_extra_inv else []))
 
 
-def test_values(adhoc_result):
-    values = adhoc_result.values()
+def test_values(adhoc_result):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    values = adhoc_result_ret.values()
     assert isinstance(values, list)
     # assure that it is a copy
-    assert values is not adhoc_result.contacted.values()
-    for count, val in enumerate(values, 1):
+    assert values is not adhoc_result_ret.contacted.values()
+    count = 0
+    for count, val in enumerate(values, 1):  # noqa: B007
         assert isinstance(val, ModuleResult)
-    assert count == len(ALL_HOSTS)
+    assert count == len(ALL_HOSTS) + len(ALL_EXTRA_HOSTS if include_extra_inv else [])
 
 
-@pytest.mark.parametrize("host", ALL_HOSTS)
-def test_contains(adhoc_result, host):
-    assert host in adhoc_result
+@pytest.mark.parametrize("host", ALL_HOSTS + ALL_EXTRA_HOSTS)
+def test_contains(adhoc_result, host):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    if not include_extra_inv and host in ALL_EXTRA_HOSTS:
+        assert host not in adhoc_result_ret
+    else:
+        assert host in adhoc_result_ret
 
 
 @pytest.mark.parametrize("host", invalid_hosts)
-def test_not_contains(adhoc_result, host):
-    assert host not in adhoc_result
+def test_not_contains(adhoc_result, host):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, dummy = adhoc_result()
+    assert host not in adhoc_result_ret
 
 
-@pytest.mark.parametrize("host_pattern", ALL_HOSTS)
-def test_getitem(adhoc_result, host_pattern):
-    assert adhoc_result[host_pattern]
-    assert isinstance(adhoc_result[host_pattern], ModuleResult)
+@pytest.mark.parametrize("host_pattern", ALL_HOSTS + ALL_EXTRA_HOSTS)
+def test_getitem(adhoc_result, host_pattern):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    if not include_extra_inv and host_pattern in ALL_EXTRA_HOSTS:
+        with pytest.raises(KeyError):
+            assert adhoc_result_ret[host_pattern]
+    else:
+        assert adhoc_result_ret[host_pattern]
+        assert isinstance(adhoc_result_ret[host_pattern], ModuleResult)
 
 
 @pytest.mark.parametrize("host_pattern", invalid_hosts)
-def test_not_getitem(adhoc_result, host_pattern):
+def test_not_getitem(adhoc_result, host_pattern):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, dummy = adhoc_result()
     with pytest.raises(KeyError):
-        assert adhoc_result[host_pattern]
+        assert adhoc_result_ret[host_pattern]
 
 
-@pytest.mark.parametrize("host_pattern", ALL_HOSTS)
-def test_getattr(adhoc_result, host_pattern):
-    assert hasattr(adhoc_result, host_pattern)
-    assert isinstance(adhoc_result[host_pattern], ModuleResult)
+@pytest.mark.parametrize("host_pattern", ALL_HOSTS + ALL_EXTRA_HOSTS)
+def test_getattr(adhoc_result, host_pattern):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, include_extra_inv = adhoc_result()
+    if not include_extra_inv and host_pattern in ALL_EXTRA_HOSTS:
+        assert not hasattr(adhoc_result_ret, host_pattern)
+    else:
+        assert hasattr(adhoc_result_ret, host_pattern)
+        assert isinstance(adhoc_result_ret[host_pattern], ModuleResult)
 
 
 @pytest.mark.parametrize("host_pattern", invalid_hosts)
-def test_not_getattr(adhoc_result, host_pattern):
-    assert not hasattr(adhoc_result, host_pattern)
+def test_not_getattr(adhoc_result, host_pattern):  # type: ignore[no-untyped-def]  # noqa: ANN001, ANN201, D103
+    adhoc_result_ret, dummy = adhoc_result()
+    assert not hasattr(adhoc_result_ret, host_pattern)
     with pytest.raises(AttributeError):
-        getattr(adhoc_result, host_pattern)
+        getattr(adhoc_result_ret, host_pattern)
 
 
-@pytest.mark.requires_ansible_v1
-def test_connection_failure_v1():
-    from pytest_ansible.host_manager import get_host_manager
+@pytest.mark.requires_ansible_v2()
+def test_connection_failure_v2():  # type: ignore[no-untyped-def]  # noqa: ANN201, D103
     from pytest_ansible.errors import AnsibleConnectionFailure
-    hosts = get_host_manager(inventory='unknown.example.com,', connection='smart')
-    with pytest.raises(AnsibleConnectionFailure) as exc_info:
-        hosts.all.ping()
-    # Assert message
-    assert exc_info.value.message == "Host unreachable"
-    # Assert contacted
-    assert exc_info.value.contacted == {}
-    # Assert dark
-    assert 'unknown.example.com' in exc_info.value.dark
-    # Assert unreachable
-    assert 'failed' in exc_info.value.dark['unknown.example.com']
-    assert exc_info.value.dark['unknown.example.com']['failed']
-    # Assert msg
-    assert 'msg' in exc_info.value.dark['unknown.example.com']
-    assert exc_info.value.dark['unknown.example.com']['msg'].startswith(u'SSH Error: ssh: Could not resolve hostname'
-                                                                        ' unknown.example.com:')
+    from pytest_ansible.host_manager.utils import get_host_manager
 
-
-@pytest.mark.requires_ansible_v2
-def test_connection_failure_v2():
-    from pytest_ansible.host_manager import get_host_manager
-    from pytest_ansible.errors import AnsibleConnectionFailure
-    hosts = get_host_manager(inventory='unknown.example.com,', connection='smart')
+    hosts = get_host_manager(inventory="unknown.example.com,", connection="smart")
     with pytest.raises(AnsibleConnectionFailure) as exc_info:
         hosts.all.ping()
     # Assert message
@@ -108,20 +130,26 @@ def test_connection_failure_v2():
     # Assert contacted
     assert exc_info.value.contacted == {}
     # Assert dark
-    assert 'unknown.example.com' in exc_info.value.dark
+    assert "unknown.example.com" in exc_info.value.dark
     # Assert unreachable
-    assert 'unreachable' in exc_info.value.dark['unknown.example.com'], exc_info.value.dark.keys()
-    assert exc_info.value.dark['unknown.example.com']['unreachable']
+    assert "unreachable" in exc_info.value.dark["unknown.example.com"], exc_info.value.dark.keys()
+    assert exc_info.value.dark["unknown.example.com"]["unreachable"]
     # Assert msg
-    assert 'msg' in exc_info.value.dark['unknown.example.com']
-    assert 'Failed to connect to the host via ssh' in exc_info.value.dark['unknown.example.com']['msg']
+    assert "msg" in exc_info.value.dark["unknown.example.com"]
+    assert (
+        "Failed to connect to the host via ssh" in exc_info.value.dark["unknown.example.com"]["msg"]
+    )
 
 
-@pytest.mark.requires_ansible_v2
-def test_connection_failure_extra_inventory_v2():
-    from pytest_ansible.host_manager import get_host_manager
+@pytest.mark.requires_ansible_v2()
+def test_connection_failure_extra_inventory_v2():  # type: ignore[no-untyped-def]  # noqa: ANN201, D103
     from pytest_ansible.errors import AnsibleConnectionFailure
-    hosts = get_host_manager(inventory='localhost', extra_inventory='unknown.example.extra.com,')
+    from pytest_ansible.host_manager.utils import get_host_manager
+
+    hosts = get_host_manager(
+        inventory="localhost",
+        extra_inventory="unknown.example.extra.com,",
+    )
     with pytest.raises(AnsibleConnectionFailure) as exc_info:
         hosts.all.ping()
     # Assert message
@@ -129,10 +157,15 @@ def test_connection_failure_extra_inventory_v2():
     # Assert contacted
     assert exc_info.value.contacted == {}
     # Assert dark
-    assert 'unknown.example.extra.com' in exc_info.value.dark
+    assert "unknown.example.extra.com" in exc_info.value.dark
     # Assert unreachable
-    assert 'unreachable' in exc_info.value.dark['unknown.example.extra.com'], exc_info.value.dark.keys()
-    assert exc_info.value.dark['unknown.example.extra.com']['unreachable']
+    assert (
+        "unreachable" in exc_info.value.dark["unknown.example.extra.com"]
+    ), exc_info.value.dark.keys()
+    assert exc_info.value.dark["unknown.example.extra.com"]["unreachable"]
     # Assert msg
-    assert 'msg' in exc_info.value.dark['unknown.example.extra.com']
-    assert 'Failed to connect to the host via ssh' in exc_info.value.dark['unknown.example.extra.com']['msg']
+    assert "msg" in exc_info.value.dark["unknown.example.extra.com"]
+    assert (
+        "Failed to connect to the host via ssh"
+        in exc_info.value.dark["unknown.example.extra.com"]["msg"]
+    )
